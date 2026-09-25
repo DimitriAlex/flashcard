@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flashcard HSK 1 & 2</title>
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  }
+
+  body {
+    min-height: 100vh;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    overflow-x: hidden;
+  }
+
+  /* ===== HEADER ===== */
+  header {
+    width: 100%;
+    max-width: 700px;
+    text-align: center;
+    color: white;
+    margin-bottom: 20px;
+  }
+
+  header h1 {
+    font-size: 1.8rem;
+    margin-bottom: 15px;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+    margin-bottom: 12px;
+  }
+
+  .file-btn {
+    background: rgba(255,255,255,0.2);
+    color: white;
+    border: 2px dashed rgba(255,255,255,0.5);
+    padding: 10px 18px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.3s;
+    backdrop-filter: blur(5px);
+  }
+
+  .file-btn:hover {
+    background: rgba(255,255,255,0.35);
+    border-color: white;
+    transform: translateY(-2px);
+  }
+
+  .file-btn input { display: none; }
+
+  .level-switch {
+    display: flex;
+    background: rgba(255,255,255,0.2);
+    border-radius: 10px;
+    padding: 4px;
+    backdrop-filter: blur(5px);
+  }
+
+  .level-switch button {
+    padding: 8px 20px;
+    border: none;
+    background: transparent;
+    color: white;
+    font-weight: 600;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s;
+    font-size: 0.9rem;
+  }
+
+  .level-switch button.active {
+    background: white;
+    color: #764ba2;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+
+  /* ===== SEARCH ===== */
+  .search-box {
+    width: 100%;
+    max-width: 500px;
+    position: relative;
+    margin-bottom: 18px;
+  }
+
+  .search-box input {
+    width: 100%;
+    padding: 12px 45px 12px 18px;
+    border-radius: 25px;
+    border: none;
+    font-size: 1rem;
+    outline: none;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+  }
+
+  .search-box::after {
+    content: '🔍';
+    position: absolute;
+    right: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 1.1rem;
+    pointer-events: none;
+  }
+
+  /* ===== CARD ===== */
+  .card-stage {
+    width: 100%;
+    max-width: 500px;
+    height: 320px;
+    perspective: 1500px;
+    position: relative;
+    margin-bottom: 20px;
+  }
+
+  .card {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    transform-style: preserve-3d;
+    transition: transform 0.7s cubic-bezier(0.4, 0.2, 0.2, 1);
+    cursor: pointer;
+  }
+
+  .card.flipped {
+    transform: rotateY(180deg);
+  }
+
+  .card-face {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    backface-visibility: hidden;
+    border-radius: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 30px;
+    box-shadow: 0 15px 40px rgba(0,0,0,0.3);
+    text-align: center;
+  }
+
+  .card-front {
+    background: white;
+    color: #333;
+  }
+
+  .card-back {
+    background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+    color: #333;
+    transform: rotateY(180deg);
+  }
+
+  .hanzi {
+    font-size: 5rem;
+    font-weight: 700;
+    color: #764ba2;
+    line-height: 1.1;
+  }
+
+  .card-front .hint {
+    margin-top: 20px;
+    font-size: 0.9rem;
+    color: #999;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+  }
+
+  .pinyin {
+    font-size: 1.8rem;
+    font-weight: 600;
+    color: #d35400;
+    margin-bottom: 15px;
+  }
+
+  .arti {
+    font-size: 1.4rem;
+    color: #333;
+    font-weight: 500;
+  }
+
+  .back-hanzi {
+    font-size: 2rem;
+    color: #764ba2;
+    margin-bottom: 12px;
+    opacity: 0.7;
+  }
+
+  /* ===== ANIMASI SLIDE ===== */
+  .card-stage.slide-out-left {
+    animation: slideOutLeft 0.35s forwards;
+  }
+  .card-stage.slide-out-right {
+    animation: slideOutRight 0.35s forwards;
+  }
+  .card-stage.slide-in-right {
+    animation: slideInRight 0.35s forwards;
+  }
+  .card-stage.slide-in-left {
+    animation: slideInLeft 0.35s forwards;
+  }
+
+  @keyframes slideOutLeft {
+    to { transform: translateX(-120%); opacity: 0; }
+  }
+  @keyframes slideOutRight {
+    to { transform: translateX(120%); opacity: 0; }
+  }
+  @keyframes slideInRight {
+    from { transform: translateX(120%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+  @keyframes slideInLeft {
+    from { transform: translateX(-120%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+
+  /* ===== NAVIGATION ===== */
+  .nav {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+    margin-bottom: 15px;
+  }
+
+  .nav button {
+    background: white;
+    border: none;
+    width: 55px;
+    height: 55px;
+    border-radius: 50%;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #764ba2;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .nav button:hover:not(:disabled) {
+    transform: scale(1.1);
+    background: #f0e6ff;
+  }
+
+  .nav button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .counter {
+    color: white;
+    font-size: 1rem;
+    font-weight: 600;
+    min-width: 80px;
+    text-align: center;
+    text-shadow: 0 2px 5px rgba(0,0,0,0.3);
+  }
+
+  .status {
+    color: white;
+    font-size: 0.9rem;
+    opacity: 0.9;
+    text-align: center;
+    margin-top: 5px;
+    min-height: 20px;
+  }
+
+  .empty-state {
+    color: white;
+    text-align: center;
+    padding: 40px 20px;
+    font-size: 1rem;
+    line-height: 1.6;
+    background: rgba(255,255,255,0.1);
+    border-radius: 15px;
+    backdrop-filter: blur(5px);
+  }
+
+  @media (max-width: 500px) {
+    .hanzi { font-size: 3.5rem; }
+    .card-stage { height: 280px; }
+    .pinyin { font-size: 1.4rem; }
+    .arti { font-size: 1.1rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📚 Flashcard HSK 1 & 2</h1>
+  <div class="controls">
+    <label class="file-btn">
+      📁 Muat HSK 1
+      <input type="file" id="fileHsk1" accept=".json">
+    </label>
+    <label class="file-btn">
+      📁 Muat HSK 2
+      <input type="file" id="fileHsk2" accept=".json">
+    </label>
+    <div class="level-switch">
+      <button id="btnHsk1" class="active">HSK 1</button>
+      <button id="btnHsk2">HSK 2</button>
+    </div>
+  </div>
+</header>
+
+<div class="search-box">
+  <input type="text" id="searchInput" placeholder="Cari hanzi, pinyin, atau arti...">
+</div>
+
+<div class="card-stage" id="cardStage">
+  <div class="card" id="card">
+    <div class="card-face card-front">
+      <div class="hanzi" id="frontHanzi">?</div>
+      <div class="hint">Klik untuk melihat arti</div>
+    </div>
+    <div class="card-face card-back">
+      <div class="back-hanzi" id="backHanzi"></div>
+      <div class="pinyin" id="backPinyin"></div>
+      <div class="arti" id="backArti"></div>
+    </div>
+  </div>
+</div>
+
+<div class="nav">
+  <button id="prevBtn" title="Sebelumnya">‹</button>
+  <div class="counter" id="counter">0 / 0</div>
+  <button id="nextBtn" title="Berikutnya">›</button>
+</div>
+
+<div class="status" id="status"></div>
+
+<script>
+  // ===== STATE =====
+  const state = {
+    hsk1: [],
+    hsk2: [],
+    currentLevel: 'hsk1',
+    filtered: [],
+    index: 0,
+    isLoading: false
+  };
+
+  // ===== ELEMEN =====
+  const el = {
+    card: document.getElementById('card'),
+    cardStage: document.getElementById('cardStage'),
+    frontHanzi: document.getElementById('frontHanzi'),
+    backHanzi: document.getElementById('backHanzi'),
+    backPinyin: document.getElementById('backPinyin'),
+    backArti: document.getElementById('backArti'),
+    counter: document.getElementById('counter'),
+    status: document.getElementById('status'),
+    prevBtn: document.getElementById('prevBtn'),
+    nextBtn: document.getElementById('nextBtn'),
+    searchInput: document.getElementById('searchInput'),
+    btnHsk1: document.getElementById('btnHsk1'),
+    btnHsk2: document.getElementById('btnHsk2'),
+    fileHsk1: document.getElementById('fileHsk1'),
+    fileHsk2: document.getElementById('fileHsk2')
+  };
+
+  // ===== LOAD FILE JSON =====
+  function loadFile(inputEl, levelKey) {
+    inputEl.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        try {
+          const data = JSON.parse(evt.target.result);
+          if (!Array.isArray(data)) throw new Error('Format harus array');
+
+          state[levelKey] = data.map(item => ({
+            hanzi: item.hanzi || item.hz || '',
+            pinyin: item.pinyin || item.py || '',
+            arti: item.arti || item.indonesia || item.meaning || item.definisi || ''
+          }));
+
+          el.status.textContent = `✅ ${levelKey.toUpperCase()} berhasil dimuat (${data.length} kata)`;
+          if (state.currentLevel === levelKey) {
+            applySearch();
+          }
+          setTimeout(() => el.status.textContent = '', 3000);
+        } catch (err) {
+          el.status.textContent = `❌ Gagal memuat: ${err.message}`;
+        }
+      };
+      reader.readAsText(file);
+      inputEl.value = '';
+    });
+  }
+
+  loadFile(el.fileHsk1, 'hsk1');
+  loadFile(el.fileHsk2, 'hsk2');
+
+  // ===== RENDER CARD =====
+  function renderCard(animateFlipReset = true) {
+    const list = state.filtered;
+
+    if (list.length === 0) {
+      el.frontHanzi.textContent = '—';
+      el.backHanzi.textContent = '';
+      el.backPinyin.textContent = '';
+      el.backArti.textContent = state.currentLevel === 'hsk1' && state.hsk1.length === 0
+        ? 'Muat file HSK 1 dulu'
+        : (state.currentLevel === 'hsk2' && state.hsk2.length === 0
+          ? 'Muat file HSK 2 dulu'
+          : 'Tidak ada hasil');
+      el.counter.textContent = '0 / 0';
+      el.prevBtn.disabled = true;
+      el.nextBtn.disabled = true;
+      return;
+    }
+
+    const item = list[state.index];
+    el.frontHanzi.textContent = item.hanzi || '?';
+    el.backHanzi.textContent = item.hanzi || '';
+    el.backPinyin.textContent = item.pinyin || '-';
+    el.backArti.textContent = item.arti || '-';
+    el.counter.textContent = `${state.index + 1} / ${list.length}`;
+
+    el.prevBtn.disabled = state.index === 0;
+    el.nextBtn.disabled = state.index === list.length - 1;
+
+    if (animateFlipReset) {
+      el.card.classList.remove('flipped');
+    }
+  }
+
+  // ===== FLIP =====
+  el.card.addEventListener('click', () => {
+    if (state.filtered.length === 0) return;
+    el.card.classList.toggle('flipped');
+  });
+
+  // ===== NAVIGASI DENGAN ANIMASI SLIDE =====
+  function slideTo(direction) {
+    if (state.filtered.length === 0) return;
+    if (direction === 'next' && state.index >= state.filtered.length - 1) return;
+    if (direction === 'prev' && state.index <= 0) return;
+
+    const outClass = direction === 'next' ? 'slide-out-left' : 'slide-out-right';
+    const inClass = direction === 'next' ? 'slide-in-right' : 'slide-in-left';
+
+    el.cardStage.classList.add(outClass);
+
+    setTimeout(() => {
+      if (direction === 'next') state.index++;
+      else state.index--;
+
+      renderCard(true);
+      el.cardStage.classList.remove(outClass);
+      el.cardStage.classList.add(inClass);
+
+      setTimeout(() => {
+        el.cardStage.classList.remove(inClass);
+      }, 350);
+    }, 350);
+  }
+
+  el.nextBtn.addEventListener('click', () => slideTo('next'));
+  el.prevBtn.addEventListener('click', () => slideTo('prev'));
+
+  // Keyboard navigation
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.key === 'ArrowRight') slideTo('next');
+    if (e.key === 'ArrowLeft') slideTo('prev');
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
+      if (state.filtered.length > 0) el.card.classList.toggle('flipped');
+    }
+  });
+
+  // ===== SEARCH =====
+  function applySearch() {
+    const q = el.searchInput.value.trim().toLowerCase();
+    const source = state.currentLevel === 'hsk1' ? state.hsk1 : state.hsk2;
+
+    state.filtered = source.filter(item => {
+      if (!q) return true;
+      return (item.hanzi || '').toLowerCase().includes(q)
+        || (item.pinyin || '').toLowerCase().includes(q)
+        || (item.arti || '').toLowerCase().includes(q);
+    });
+
+    state.index = 0;
+    renderCard(true);
+  }
+
+  el.searchInput.addEventListener('input', applySearch);
+
+  // ===== SWITCH LEVEL =====
+  function switchLevel(level) {
+    if (state.currentLevel === level) return;
+    state.currentLevel = level;
+
+    el.btnHsk1.classList.toggle('active', level === 'hsk1');
+    el.btnHsk2.classList.toggle('active', level === 'hsk2');
+
+    // Reset search & tampilkan level baru
+    el.searchInput.value = '';
+    applySearch();
+
+    el.status.textContent = level === 'hsk1'
+      ? (state.hsk1.length === 0 ? '⚠️ File HSK 1 belum dimuat' : '')
+      : (state.hsk2.length === 0 ? '⚠️ File HSK 2 belum dimuat' : '');
+
+    setTimeout(() => el.status.textContent = '', 2500);
+  }
+
+  el.btnHsk1.addEventListener('click', () => switchLevel('hsk1'));
+  el.btnHsk2.addEventListener('click', () => switchLevel('hsk2'));
+
+  // ===== INIT =====
+  renderCard();
+  el.status.textContent = 'Silakan muat file JSON untuk HSK 1 atau HSK 2';
+</script>
+
+</body>
+</html>
