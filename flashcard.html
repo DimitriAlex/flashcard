@@ -22,7 +22,6 @@
     overflow-x: hidden;
   }
 
-  /* ===== HEADER ===== */
   header {
     width: 100%;
     max-width: 700px;
@@ -91,7 +90,6 @@
     box-shadow: 0 2px 8px rgba(0,0,0,0.2);
   }
 
-  /* ===== SEARCH ===== */
   .search-box {
     width: 100%;
     max-width: 500px;
@@ -119,7 +117,6 @@
     pointer-events: none;
   }
 
-  /* ===== CARD ===== */
   .card-stage {
     width: 100%;
     max-width: 500px;
@@ -207,7 +204,6 @@
     opacity: 0.7;
   }
 
-  /* ===== ANIMASI SLIDE ===== */
   .card-stage.slide-out-left {
     animation: slideOutLeft 0.35s forwards;
   }
@@ -236,7 +232,6 @@
     to { transform: translateX(0); opacity: 1; }
   }
 
-  /* ===== NAVIGATION ===== */
   .nav {
     display: flex;
     gap: 15px;
@@ -286,17 +281,24 @@
     text-align: center;
     margin-top: 5px;
     min-height: 20px;
+    max-width: 500px;
+    line-height: 1.5;
   }
 
-  .empty-state {
-    color: white;
-    text-align: center;
-    padding: 40px 20px;
-    font-size: 1rem;
-    line-height: 1.6;
-    background: rgba(255,255,255,0.1);
-    border-radius: 15px;
-    backdrop-filter: blur(5px);
+  .loading {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 
   @media (max-width: 500px) {
@@ -313,12 +315,8 @@
   <h1>📚 Flashcard HSK 1 & 2</h1>
   <div class="controls">
     <label class="file-btn">
-      📁 Muat HSK 1
-      <input type="file" id="fileHsk1" accept=".json">
-    </label>
-    <label class="file-btn">
-      📁 Muat HSK 2
-      <input type="file" id="fileHsk2" accept=".json">
+      📁 Muat File JSON (HSK 1 / HSK 2)
+      <input type="file" id="fileInput" accept=".json" multiple>
     </label>
     <div class="level-switch">
       <button id="btnHsk1" class="active">HSK 1</button>
@@ -354,17 +352,14 @@
 <div class="status" id="status"></div>
 
 <script>
-  // ===== STATE =====
   const state = {
     hsk1: [],
     hsk2: [],
     currentLevel: 'hsk1',
     filtered: [],
-    index: 0,
-    isLoading: false
+    index: 0
   };
 
-  // ===== ELEMEN =====
   const el = {
     card: document.getElementById('card'),
     cardStage: document.getElementById('cardStage'),
@@ -379,58 +374,105 @@
     searchInput: document.getElementById('searchInput'),
     btnHsk1: document.getElementById('btnHsk1'),
     btnHsk2: document.getElementById('btnHsk2'),
-    fileHsk1: document.getElementById('fileHsk1'),
-    fileHsk2: document.getElementById('fileHsk2')
+    fileInput: document.getElementById('fileInput')
   };
 
-  // ===== LOAD FILE JSON =====
-  function loadFile(inputEl, levelKey) {
-    inputEl.addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-        try {
-          const data = JSON.parse(evt.target.result);
-          if (!Array.isArray(data)) throw new Error('Format harus array');
-
-          state[levelKey] = data.map(item => ({
-            hanzi: item.hanzi || item.hz || '',
-            pinyin: item.pinyin || item.py || '',
-            arti: item.arti || item.indonesia || item.meaning || item.definisi || ''
-          }));
-
-          el.status.textContent = `✅ ${levelKey.toUpperCase()} berhasil dimuat (${data.length} kata)`;
-          if (state.currentLevel === levelKey) {
-            applySearch();
-          }
-          setTimeout(() => el.status.textContent = '', 3000);
-        } catch (err) {
-          el.status.textContent = `❌ Gagal memuat: ${err.message}`;
-        }
-      };
-      reader.readAsText(file);
-      inputEl.value = '';
-    });
+  // ===== NORMALISASI DATA JSON =====
+  function normalizeData(data) {
+    if (!Array.isArray(data)) throw new Error('Format JSON harus berupa array');
+    return data.map(item => ({
+      hanzi: item.hanzi || item.hz || '',
+      pinyin: item.pinyin || item.py || '',
+      arti: item.arti || item.indonesia || item.meaning || item.definisi || ''
+    }));
   }
 
-  loadFile(el.fileHsk1, 'hsk1');
-  loadFile(el.fileHsk2, 'hsk2');
+  // ===== DETEKSI LEVEL DARI NAMA FILE =====
+  function detectLevel(fileName) {
+    const name = fileName.toLowerCase();
+    if (name.includes('hsk1') || name.includes('hsk_1') || name.includes('hsk 1')) return 'hsk1';
+    if (name.includes('hsk2') || name.includes('hsk_2') || name.includes('hsk 2')) return 'hsk2';
+    return null;
+  }
 
-  // ===== RENDER CARD =====
-  function renderCard(animateFlipReset = true) {
+  // ===== AUTO LOAD DARI SERVER =====
+  async function autoLoad(levelKey, fileName) {
+    try {
+      const res = await fetch(fileName, { cache: 'no-cache' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      state[levelKey] = normalizeData(data);
+      return true;
+    } catch (err) {
+      console.warn(`Auto-load ${fileName} gagal:`, err.message);
+      return false;
+    }
+  }
+
+  // ===== LOAD FILE MANUAL (SATU TOMBOL, MULTI FILE) =====
+  el.fileInput.addEventListener('change', async (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+
+    let loaded1 = false, loaded2 = false;
+    const messages = [];
+
+    for (const file of files) {
+      const level = detectLevel(file.name);
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        const normalized = normalizeData(data);
+
+        if (level === 'hsk1') {
+          state.hsk1 = normalized;
+          loaded1 = true;
+          messages.push(`✅ HSK 1: ${normalized.length} kata`);
+        } else if (level === 'hsk2') {
+          state.hsk2 = normalized;
+          loaded2 = true;
+          messages.push(`✅ HSK 2: ${normalized.length} kata`);
+        } else {
+          // Nama file tidak jelas → taruh di level yang sedang kosong
+          if (state.hsk1.length === 0) {
+            state.hsk1 = normalized;
+            loaded1 = true;
+            messages.push(`✅ ${file.name} → HSK 1: ${normalized.length} kata`);
+          } else if (state.hsk2.length === 0) {
+            state.hsk2 = normalized;
+            loaded2 = true;
+            messages.push(`✅ ${file.name} → HSK 2: ${normalized.length} kata`);
+          } else {
+            messages.push(`⚠️ ${file.name}: nama tidak dikenali (harus mengandung "hsk1" atau "hsk2")`);
+          }
+        }
+      } catch (err) {
+        messages.push(`❌ ${file.name}: ${err.message}`);
+      }
+    }
+
+    // Refresh tampilan
+    if (loaded1 || loaded2) {
+      applySearch();
+    }
+
+    el.status.innerHTML = messages.join('<br>');
+    setTimeout(() => {
+      if (state.hsk1.length && state.hsk2.length) el.status.textContent = '';
+    }, 5000);
+
+    el.fileInput.value = '';
+  });
+
+  // ===== RENDER =====
+  function renderCard(resetFlip = true) {
     const list = state.filtered;
 
     if (list.length === 0) {
       el.frontHanzi.textContent = '—';
       el.backHanzi.textContent = '';
       el.backPinyin.textContent = '';
-      el.backArti.textContent = state.currentLevel === 'hsk1' && state.hsk1.length === 0
-        ? 'Muat file HSK 1 dulu'
-        : (state.currentLevel === 'hsk2' && state.hsk2.length === 0
-          ? 'Muat file HSK 2 dulu'
-          : 'Tidak ada hasil');
+      el.backArti.textContent = 'Tidak ada data';
       el.counter.textContent = '0 / 0';
       el.prevBtn.disabled = true;
       el.nextBtn.disabled = true;
@@ -447,9 +489,7 @@
     el.prevBtn.disabled = state.index === 0;
     el.nextBtn.disabled = state.index === list.length - 1;
 
-    if (animateFlipReset) {
-      el.card.classList.remove('flipped');
-    }
+    if (resetFlip) el.card.classList.remove('flipped');
   }
 
   // ===== FLIP =====
@@ -458,7 +498,7 @@
     el.card.classList.toggle('flipped');
   });
 
-  // ===== NAVIGASI DENGAN ANIMASI SLIDE =====
+  // ===== NAVIGASI =====
   function slideTo(direction) {
     if (state.filtered.length === 0) return;
     if (direction === 'next' && state.index >= state.filtered.length - 1) return;
@@ -470,23 +510,17 @@
     el.cardStage.classList.add(outClass);
 
     setTimeout(() => {
-      if (direction === 'next') state.index++;
-      else state.index--;
-
+      state.index += direction === 'next' ? 1 : -1;
       renderCard(true);
       el.cardStage.classList.remove(outClass);
       el.cardStage.classList.add(inClass);
-
-      setTimeout(() => {
-        el.cardStage.classList.remove(inClass);
-      }, 350);
+      setTimeout(() => el.cardStage.classList.remove(inClass), 350);
     }, 350);
   }
 
   el.nextBtn.addEventListener('click', () => slideTo('next'));
   el.prevBtn.addEventListener('click', () => slideTo('prev'));
 
-  // Keyboard navigation
   document.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT') return;
     if (e.key === 'ArrowRight') slideTo('next');
@@ -519,27 +553,39 @@
   function switchLevel(level) {
     if (state.currentLevel === level) return;
     state.currentLevel = level;
-
     el.btnHsk1.classList.toggle('active', level === 'hsk1');
     el.btnHsk2.classList.toggle('active', level === 'hsk2');
-
-    // Reset search & tampilkan level baru
     el.searchInput.value = '';
     applySearch();
-
-    el.status.textContent = level === 'hsk1'
-      ? (state.hsk1.length === 0 ? '⚠️ File HSK 1 belum dimuat' : '')
-      : (state.hsk2.length === 0 ? '⚠️ File HSK 2 belum dimuat' : '');
-
-    setTimeout(() => el.status.textContent = '', 2500);
   }
 
   el.btnHsk1.addEventListener('click', () => switchLevel('hsk1'));
   el.btnHsk2.addEventListener('click', () => switchLevel('hsk2'));
 
-  // ===== INIT =====
-  renderCard();
-  el.status.textContent = 'Silakan muat file JSON untuk HSK 1 atau HSK 2';
+  // ===== INIT: AUTO LOAD =====
+  async function init() {
+    el.status.innerHTML = '<span class="loading"></span>Memuat data HSK...';
+
+    const [ok1, ok2] = await Promise.all([
+      autoLoad('hsk1', 'hsk1.json'),
+      autoLoad('hsk2', 'hsk2.json')
+    ]);
+
+    if (ok1 && ok2) {
+      el.status.textContent = `✅ HSK 1 (${state.hsk1.length} kata) & HSK 2 (${state.hsk2.length} kata) siap!`;
+      setTimeout(() => el.status.textContent = '', 3500);
+    } else if (ok1) {
+      el.status.textContent = `✅ HSK 1 siap. ⚠️ HSK 2 belum dimuat (klik tombol Muat File JSON)`;
+    } else if (ok2) {
+      el.status.textContent = `✅ HSK 2 siap. ⚠️ HSK 1 belum dimuat (klik tombol Muat File JSON)`;
+    } else {
+      el.status.textContent = '⚠️ Gagal memuat otomatis. Klik tombol "Muat File JSON" dan pilih hsk1.json & hsk2.json sekaligus.';
+    }
+
+    applySearch();
+  }
+
+  init();
 </script>
 
 </body>
