@@ -204,6 +204,46 @@
     opacity: 0.7;
   }
 
+  /* ===== TOMBOL SPEAKER ===== */
+  .speak-btn {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(118, 75, 162, 0.15);
+    color: #764ba2;
+    font-size: 1.3rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    z-index: 10;
+  }
+
+  .speak-btn:hover {
+    background: rgba(118, 75, 162, 0.3);
+    transform: scale(1.1);
+  }
+
+  .speak-btn:active {
+    transform: scale(0.95);
+  }
+
+  .speak-btn.speaking {
+    background: #764ba2;
+    color: white;
+    animation: speakPulse 1s infinite;
+  }
+
+  @keyframes speakPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(118, 75, 162, 0.7); }
+    50% { box-shadow: 0 0 0 10px rgba(118, 75, 162, 0); }
+  }
+
   .card-stage.slide-out-left {
     animation: slideOutLeft 0.35s forwards;
   }
@@ -301,11 +341,61 @@
     to { transform: rotate(360deg); }
   }
 
+  /* Toggle auto-speak */
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: white;
+    font-size: 0.85rem;
+    background: rgba(255,255,255,0.15);
+    padding: 6px 14px;
+    border-radius: 20px;
+    cursor: pointer;
+    user-select: none;
+    backdrop-filter: blur(5px);
+    transition: background 0.2s;
+  }
+
+  .toggle-row:hover {
+    background: rgba(255,255,255,0.25);
+  }
+
+  .toggle-switch {
+    width: 36px;
+    height: 20px;
+    background: rgba(0,0,0,0.3);
+    border-radius: 10px;
+    position: relative;
+    transition: background 0.3s;
+  }
+
+  .toggle-switch::after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    background: white;
+    border-radius: 50%;
+    top: 2px;
+    left: 2px;
+    transition: transform 0.3s;
+  }
+
+  .toggle-row.on .toggle-switch {
+    background: #4caf50;
+  }
+
+  .toggle-row.on .toggle-switch::after {
+    transform: translateX(16px);
+  }
+
   @media (max-width: 500px) {
     .hanzi { font-size: 3.5rem; }
     .card-stage { height: 280px; }
     .pinyin { font-size: 1.4rem; }
     .arti { font-size: 1.1rem; }
+    .speak-btn { width: 40px; height: 40px; font-size: 1.1rem; }
   }
 </style>
 </head>
@@ -322,6 +412,10 @@
       <button id="btnHsk1" class="active">HSK 1</button>
       <button id="btnHsk2">HSK 2</button>
     </div>
+    <div class="toggle-row on" id="toggleAutoSpeak" title="Otomatis bacakan hanzi saat kartu dibalik">
+      🔊 Auto
+      <div class="toggle-switch"></div>
+    </div>
   </div>
 </header>
 
@@ -332,10 +426,12 @@
 <div class="card-stage" id="cardStage">
   <div class="card" id="card">
     <div class="card-face card-front">
+      <button class="speak-btn" id="speakFrontBtn" title="Bacakan hanzi">🔊</button>
       <div class="hanzi" id="frontHanzi">?</div>
       <div class="hint">Klik untuk melihat arti</div>
     </div>
     <div class="card-face card-back">
+      <button class="speak-btn" id="speakBackBtn" title="Bacakan hanzi">🔊</button>
       <div class="back-hanzi" id="backHanzi"></div>
       <div class="pinyin" id="backPinyin"></div>
       <div class="arti" id="backArti"></div>
@@ -357,7 +453,9 @@
     hsk2: [],
     currentLevel: 'hsk1',
     filtered: [],
-    index: 0
+    index: 0,
+    autoSpeak: true,
+    currentUtterance: null
   };
 
   const el = {
@@ -374,8 +472,105 @@
     searchInput: document.getElementById('searchInput'),
     btnHsk1: document.getElementById('btnHsk1'),
     btnHsk2: document.getElementById('btnHsk2'),
-    fileInput: document.getElementById('fileInput')
+    fileInput: document.getElementById('fileInput'),
+    speakFrontBtn: document.getElementById('speakFrontBtn'),
+    speakBackBtn: document.getElementById('speakBackBtn'),
+    toggleAutoSpeak: document.getElementById('toggleAutoSpeak')
   };
+
+  // ============================================
+  // ===== TTS: TEXT TO SPEECH ==================
+  // ============================================
+  const tts = {
+    supported: 'speechSynthesis' in window,
+    voices: [],
+    chineseVoice: null,
+
+    init() {
+      if (!this.supported) {
+        console.warn('Browser tidak mendukung Web Speech API');
+        return;
+      }
+      this.loadVoices();
+      // Beberapa browser load voices secara async
+      window.speechSynthesis.onvoiceschanged = () => this.loadVoices();
+    },
+
+    loadVoices() {
+      this.voices = window.speechSynthesis.getVoices();
+      this.chineseVoice = this.pickChineseFemaleVoice();
+    },
+
+    pickChineseFemaleVoice() {
+      if (!this.voices.length) return null;
+
+      // Prioritas: cari suara Mandarin (zh-CN) yang mengandung kata "female" atau nama suara wanita
+      const femaleKeywords = ['female', 'woman', 'xiaoxiao', 'yaoyao', 'huihui', 'tingting', 'mei', 'xiaoyi', 'sinji', 'google'];
+      const maleKeywords = ['male', 'man', 'yunxi', 'yunjian', 'kangkang'];
+
+      const zhVoices = this.voices.filter(v => {
+        const lang = (v.lang || '').toLowerCase();
+        return lang.startsWith('zh') || lang.includes('cmn') || lang.includes('chinese');
+      });
+
+      if (zhVoices.length === 0) {
+        // Tidak ada suara Mandarin, pakai default
+        return this.voices[0] || null;
+      }
+
+      // Cari suara wanita Mandarin
+      let female = zhVoices.find(v => {
+        const name = (v.name || '').toLowerCase();
+        return femaleKeywords.some(k => name.includes(k))
+          && !maleKeywords.some(k => name.includes(k));
+      });
+
+      if (female) return female;
+
+      // Fallback: pilih suara zh-CN pertama
+      const zhCN = zhVoices.find(v => (v.lang || '').toLowerCase().includes('zh-cn'));
+      return zhCN || zhVoices[0];
+    },
+
+    speak(text, buttonEl = null) {
+      if (!this.supported) {
+        el.status.textContent = '⚠️ Browser tidak mendukung fitur suara';
+        setTimeout(() => el.status.textContent = '', 2500);
+        return;
+      }
+      if (!text) return;
+
+      // Stop yang sedang berjalan
+      window.speechSynthesis.cancel();
+
+      // Reload voices jika belum ada
+      if (!this.chineseVoice) {
+        this.loadVoices();
+      }
+
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = 'zh-CN';
+      utter.rate = 0.7;    // <-- LAMBAT (default 1.0)
+      utter.pitch = 1.15;  // <-- sedikit tinggi = suara wanita
+      utter.volume = 1.0;
+
+      if (this.chineseVoice) {
+        utter.voice = this.chineseVoice;
+      }
+
+      // Indikator visual
+      if (buttonEl) {
+        buttonEl.classList.add('speaking');
+        utter.onend = () => buttonEl.classList.remove('speaking');
+        utter.onerror = () => buttonEl.classList.remove('speaking');
+      }
+
+      state.currentUtterance = utter;
+      window.speechSynthesis.speak(utter);
+    }
+  };
+
+  tts.init();
 
   // ===== NORMALISASI DATA JSON =====
   function normalizeData(data) {
@@ -409,7 +604,7 @@
     }
   }
 
-  // ===== LOAD FILE MANUAL (SATU TOMBOL, MULTI FILE) =====
+  // ===== LOAD FILE MANUAL =====
   el.fileInput.addEventListener('change', async (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
@@ -433,7 +628,6 @@
           loaded2 = true;
           messages.push(`✅ HSK 2: ${normalized.length} kata`);
         } else {
-          // Nama file tidak jelas → taruh di level yang sedang kosong
           if (state.hsk1.length === 0) {
             state.hsk1 = normalized;
             loaded1 = true;
@@ -443,7 +637,7 @@
             loaded2 = true;
             messages.push(`✅ ${file.name} → HSK 2: ${normalized.length} kata`);
           } else {
-            messages.push(`⚠️ ${file.name}: nama tidak dikenali (harus mengandung "hsk1" atau "hsk2")`);
+            messages.push(`⚠️ ${file.name}: nama tidak dikenali`);
           }
         }
       } catch (err) {
@@ -451,10 +645,7 @@
       }
     }
 
-    // Refresh tampilan
-    if (loaded1 || loaded2) {
-      applySearch();
-    }
+    if (loaded1 || loaded2) applySearch();
 
     el.status.innerHTML = messages.join('<br>');
     setTimeout(() => {
@@ -493,9 +684,45 @@
   }
 
   // ===== FLIP =====
-  el.card.addEventListener('click', () => {
+  el.card.addEventListener('click', (e) => {
+    // Jangan flip kalau yang diklik tombol speaker
+    if (e.target.closest('.speak-btn')) return;
+
     if (state.filtered.length === 0) return;
     el.card.classList.toggle('flipped');
+
+    // Auto-speak saat kartu dibalik (menampilkan jawaban)
+    if (el.card.classList.contains('flipped') && state.autoSpeak) {
+      const item = state.filtered[state.index];
+      if (item && item.hanzi) {
+        setTimeout(() => tts.speak(item.hanzi, el.speakBackBtn), 400);
+      }
+    }
+  });
+
+  // ===== TOMBOL SPEAKER =====
+  el.speakFrontBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (state.filtered.length === 0) return;
+    const item = state.filtered[state.index];
+    if (item && item.hanzi) tts.speak(item.hanzi, el.speakFrontBtn);
+  });
+
+  el.speakBackBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (state.filtered.length === 0) return;
+    const item = state.filtered[state.index];
+    if (item && item.hanzi) tts.speak(item.hanzi, el.speakBackBtn);
+  });
+
+  // ===== TOGGLE AUTO-SPEAK =====
+  el.toggleAutoSpeak.addEventListener('click', () => {
+    state.autoSpeak = !state.autoSpeak;
+    el.toggleAutoSpeak.classList.toggle('on', state.autoSpeak);
+    el.status.textContent = state.autoSpeak
+      ? '🔊 Auto-speak: AKTIF'
+      : '🔇 Auto-speak: NONAKTIF';
+    setTimeout(() => el.status.textContent = '', 2000);
   });
 
   // ===== NAVIGASI =====
@@ -503,6 +730,8 @@
     if (state.filtered.length === 0) return;
     if (direction === 'next' && state.index >= state.filtered.length - 1) return;
     if (direction === 'prev' && state.index <= 0) return;
+
+    window.speechSynthesis.cancel();
 
     const outClass = direction === 'next' ? 'slide-out-left' : 'slide-out-right';
     const inClass = direction === 'next' ? 'slide-in-right' : 'slide-in-left';
@@ -523,11 +752,32 @@
 
   document.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT') return;
+
     if (e.key === 'ArrowRight') slideTo('next');
     if (e.key === 'ArrowLeft') slideTo('prev');
+
     if (e.key === ' ' || e.key === 'Enter') {
       e.preventDefault();
-      if (state.filtered.length > 0) el.card.classList.toggle('flipped');
+      if (state.filtered.length > 0) {
+        el.card.classList.toggle('flipped');
+        if (el.card.classList.contains('flipped') && state.autoSpeak) {
+          const item = state.filtered[state.index];
+          if (item && item.hanzi) {
+            setTimeout(() => tts.speak(item.hanzi, el.speakBackBtn), 400);
+          }
+        }
+      }
+    }
+
+    // Tombol 'S' untuk speak manual
+    if (e.key === 's' || e.key === 'S') {
+      if (state.filtered.length > 0) {
+        const item = state.filtered[state.index];
+        if (item && item.hanzi) {
+          const btn = el.card.classList.contains('flipped') ? el.speakBackBtn : el.speakFrontBtn;
+          tts.speak(item.hanzi, btn);
+        }
+      }
     }
   });
 
@@ -552,6 +802,7 @@
   // ===== SWITCH LEVEL =====
   function switchLevel(level) {
     if (state.currentLevel === level) return;
+    window.speechSynthesis.cancel();
     state.currentLevel = level;
     el.btnHsk1.classList.toggle('active', level === 'hsk1');
     el.btnHsk2.classList.toggle('active', level === 'hsk2');
@@ -562,7 +813,7 @@
   el.btnHsk1.addEventListener('click', () => switchLevel('hsk1'));
   el.btnHsk2.addEventListener('click', () => switchLevel('hsk2'));
 
-  // ===== INIT: AUTO LOAD =====
+  // ===== INIT =====
   async function init() {
     el.status.innerHTML = '<span class="loading"></span>Memuat data HSK...';
 
@@ -575,11 +826,18 @@
       el.status.textContent = `✅ HSK 1 (${state.hsk1.length} kata) & HSK 2 (${state.hsk2.length} kata) siap!`;
       setTimeout(() => el.status.textContent = '', 3500);
     } else if (ok1) {
-      el.status.textContent = `✅ HSK 1 siap. ⚠️ HSK 2 belum dimuat (klik tombol Muat File JSON)`;
+      el.status.textContent = `✅ HSK 1 siap. ⚠️ HSK 2 belum dimuat`;
     } else if (ok2) {
-      el.status.textContent = `✅ HSK 2 siap. ⚠️ HSK 1 belum dimuat (klik tombol Muat File JSON)`;
+      el.status.textContent = `✅ HSK 2 siap. ⚠️ HSK 1 belum dimuat`;
     } else {
-      el.status.textContent = '⚠️ Gagal memuat otomatis. Klik tombol "Muat File JSON" dan pilih hsk1.json & hsk2.json sekaligus.';
+      el.status.textContent = '⚠️ Gagal memuat otomatis. Klik "Muat File JSON" & pilih hsk1.json + hsk2.json.';
+    }
+
+    // Cek dukungan TTS
+    if (!tts.supported) {
+      setTimeout(() => {
+        el.status.textContent = '⚠️ Browser tidak mendukung fitur suara TTS';
+      }, 4000);
     }
 
     applySearch();
